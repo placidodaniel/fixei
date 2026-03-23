@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BugFix Agent — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #0a0c10;
+    --surface:  #111318;
+    --card:     #161920;
+    --border:   #1e2330;
+    --border2:  #2a3045;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --dim:      #3a4560;
+
+    --green:    #22d3a0;
+    --green-bg: rgba(34,211,160,.08);
+    --blue:     #60a5fa;
+    --blue-bg:  rgba(96,165,250,.08);
+    --amber:    #fbbf24;
+    --amber-bg: rgba(251,191,36,.08);
+    --red:      #f87171;
+    --red-bg:   rgba(248,113,113,.08);
+    --purple:   #a78bfa;
+    --purple-bg:rgba(167,139,250,.08);
+
+    --radius:   10px;
+    --mono:     'IBM Plex Mono', monospace;
+    --sans:     'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* ── Layout ── */
+  .shell {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: 56px 1fr;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    gap: 16px;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 800;
+    font-size: 15px;
+    letter-spacing: -.3px;
+    white-space: nowrap;
+  }
+
+  .logo-icon {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, var(--green), var(--blue));
+    border-radius: 7px;
+    display: grid; place-items: center;
+    font-size: 14px;
+  }
+
+  .header-right { display: flex; align-items: center; gap: 12px; }
+
+  .status-pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(34,211,160,.2);
+    display: flex; align-items: center; gap: 5px;
+  }
+
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .dot.pulse { animation: pulse 1.8s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  .btn {
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 7px;
+    border: none;
+    cursor: pointer;
+    transition: all .15s;
+  }
+
+  .btn-primary {
+    background: var(--green);
+    color: #000;
+  }
+  .btn-primary:hover { filter: brightness(1.1); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border2);
+  }
+  .btn-ghost:hover { color: var(--text); border-color: var(--dim); }
+
+  /* ── Sidebar ── */
+  nav {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 20px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-y: auto;
+  }
+
+  .nav-section {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    color: var(--dim);
+    text-transform: uppercase;
+    padding: 12px 10px 6px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    transition: all .12s;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+  }
+
+  .nav-item:hover { background: var(--card); color: var(--text); }
+  .nav-item.active { background: var(--green-bg); color: var(--green); }
+
+  .nav-icon { font-size: 15px; width: 20px; text-align: center; }
+
+  .badge {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: var(--border2);
+    color: var(--muted);
+  }
+
+  /* ── Main ── */
+  main {
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* ── Stats row ── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 500;
+    line-height: 1;
+  }
+
+  .stat-sub { font-size: 11px; color: var(--muted); }
+
+  /* ── Section header ── */
+  .section-hd {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* ── Run cards ── */
+  .runs { display: flex; flex-direction: column; gap: 8px; }
+
+  .run-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    gap: 14px;
+    align-items: center;
+    cursor: pointer;
+    transition: border-color .15s;
+  }
+
+  .run-card:hover { border-color: var(--border2); }
+  .run-card.active-run { border-color: var(--blue); background: var(--blue-bg); }
+
+  .run-icon {
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    display: grid; place-items: center;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+
+  .run-info { min-width: 0; }
+
+  .run-title {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+  }
+
+  .run-meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    gap: 10px;
+  }
+
+  .run-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  /* ── Status chips ── */
+  .chip {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+
+  .chip-success  { background: var(--green-bg);  color: var(--green);  border: 1px solid rgba(34,211,160,.2); }
+  .chip-running  { background: var(--blue-bg);   color: var(--blue);   border: 1px solid rgba(96,165,250,.2); }
+  .chip-warning  { background: var(--amber-bg);  color: var(--amber);  border: 1px solid rgba(251,191,36,.2); }
+  .chip-error    { background: var(--red-bg);    color: var(--red);    border: 1px solid rgba(248,113,113,.2); }
+  .chip-invalid  { background: rgba(100,116,139,.1); color: var(--muted); border: 1px solid var(--border2); }
+
+  /* ── Pipeline stepper ── */
+  .pipeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .step {
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    gap: 12px;
+    position: relative;
+  }
+
+  .step:not(:last-child) .step-line {
+    position: absolute;
+    left: 17px;
+    top: 36px;
+    bottom: -4px;
+    width: 2px;
+    background: var(--border);
+  }
+
+  .step-dot {
+    width: 36px; height: 36px;
+    border-radius: 9px;
+    display: grid; place-items: center;
+    font-size: 14px;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+    border: 1px solid var(--border);
+    background: var(--card);
+    transition: all .2s;
+  }
+
+  .step-dot.done   { background: var(--green-bg); border-color: rgba(34,211,160,.3); }
+  .step-dot.active { background: var(--blue-bg);  border-color: rgba(96,165,250,.3); animation: stepPulse 1.5s infinite; }
+  .step-dot.error  { background: var(--red-bg);   border-color: rgba(248,113,113,.3); }
+  .step-dot.skip   { opacity: .4; }
+
+  @keyframes stepPulse { 0%,100%{box-shadow:0 0 0 0 rgba(96,165,250,.3)} 50%{box-shadow:0 0 0 6px rgba(96,165,250,0)} }
+
+  .step-body {
+    padding: 8px 0 20px;
+  }
+
+  .step-name { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
+  .step-desc { font-size: 12px; color: var(--muted); }
+
+  /* ── Detail panel ── */
+  .detail {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .detail-field { display: flex; flex-direction: column; gap: 4px; }
+  .detail-label { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
+  .detail-value { font-family: var(--mono); font-size: 12px; color: var(--text); word-break: break-all; }
+
+  .code-block {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--green);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+
+  /* ── Trigger modal ── */
+  .overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.7);
+    z-index: 100;
+    place-items: center;
+  }
+
+  .overlay.open { display: grid; }
+
+  .modal {
+    background: var(--card);
+    border: 1px solid var(--border2);
+    border-radius: 14px;
+    padding: 28px;
+    width: 500px;
+    max-width: 95vw;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .modal-title { font-size: 16px; font-weight: 800; }
+  .modal-sub   { font-size: 12px; color: var(--muted); margin-top: -8px; }
+
+  textarea {
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 12px;
+    resize: vertical;
+    min-height: 160px;
+    width: 100%;
+    outline: none;
+    transition: border-color .15s;
+  }
+
+  textarea:focus { border-color: var(--blue); }
+
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+  /* ── Empty state ── */
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 60px 20px;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  .empty-icon { font-size: 40px; opacity: .3; }
+  .empty-title { font-size: 15px; font-weight: 700; color: var(--text); opacity: .5; }
+  .empty-desc  { font-size: 12px; }
+
+  /* ── Two-col layout ── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 16px;
+    align-items: start;
+  }
+
+  @media (max-width: 900px) {
+    .two-col { grid-template-columns: 1fr; }
+    .stats   { grid-template-columns: repeat(2, 1fr); }
+    .shell   { grid-template-columns: 1fr; grid-template-rows: 56px auto 1fr; }
+    nav      { display: none; }
+  }
+
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🤖</div>
+      BugFix Agent
+    </div>
+    <div class="header-right">
+      <div class="status-pill">
+        <span class="dot pulse"></span>
+        online
+      </div>
+      <button class="btn btn-ghost" onclick="refresh()">↻ Refresh</button>
+      <button class="btn btn-primary" onclick="openTrigger()">+ Trigger manual</button>
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <nav>
+    <div class="nav-section">Pipeline</div>
+    <button class="nav-item active" onclick="showView('runs')">
+      <span class="nav-icon">📋</span> Runs
+      <span class="badge" id="runs-badge">0</span>
+    </button>
+    <button class="nav-item" onclick="showView('pipeline')">
+      <span class="nav-icon">⚡</span> Pipeline
+    </button>
+
+    <div class="nav-section">Config</div>
+    <button class="nav-item" onclick="showView('config')">
+      <span class="nav-icon">⚙️</span> Variáveis
+    </button>
+    <button class="nav-item" onclick="showView('docs')">
+      <span class="nav-icon">📖</span> Setup guide
+    </button>
+  </nav>
+
+  <!-- Main -->
+  <main id="main">
+
+    <!-- Stats -->
+    <div class="stats" id="stats">
+      <div class="stat-card">
+        <div class="stat-label">Total runs</div>
+        <div class="stat-value" id="stat-total" style="color:var(--blue)">0</div>
+        <div class="stat-sub">desde o início</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Sucesso</div>
+        <div class="stat-value" id="stat-success" style="color:var(--green)">0</div>
+        <div class="stat-sub" id="stat-rate">taxa: —</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Em execução</div>
+        <div class="stat-value" id="stat-running" style="color:var(--amber)">0</div>
+        <div class="stat-sub">agora</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Escalados</div>
+        <div class="stat-value" id="stat-escalated" style="color:var(--red)">0</div>
+        <div class="stat-sub">precisaram de humano</div>
+      </div>
+    </div>
+
+    <!-- View: Runs -->
+    <div id="view-runs">
+      <div class="two-col">
+        <div>
+          <div class="section-hd">
+            <div class="section-title">🔄 Execuções recentes</div>
+          </div>
+          <div class="runs" id="runs-list">
+            <div class="empty">
+              <div class="empty-icon">🤖</div>
+              <div class="empty-title">Nenhuma execução ainda</div>
+              <div class="empty-desc">Configure o webhook ou use o botão "Trigger manual" para testar.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detail panel -->
+        <div id="detail-panel" style="display:none">
+          <div class="section-hd"><div class="section-title">🔍 Detalhes</div></div>
+          <div class="detail" id="detail-content"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- View: Pipeline -->
+    <div id="view-pipeline" style="display:none">
+      <div class="section-hd"><div class="section-title">⚡ Fluxo do pipeline</div></div>
+      <div class="detail" style="max-width:520px">
+        <div class="pipeline" id="pipeline-steps"></div>
+      </div>
+    </div>
+
+    <!-- View: Config -->
+    <div id="view-config" style="display:none">
+      <div class="section-hd"><div class="section-title">⚙️ Variáveis de ambiente necessárias</div></div>
+      <div class="detail">
+        <div id="config-list"></div>
+      </div>
+    </div>
+
+    <!-- View: Docs -->
+    <div id="view-docs" style="display:none">
+      <div class="section-hd"><div class="section-title">📖 Setup Guide</div></div>
+      <div class="detail">
+        <div id="docs-content" style="display:flex;flex-direction:column;gap:14px;font-size:13px;line-height:1.8;color:var(--muted)"></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Trigger modal -->
+<div class="overlay" id="trigger-overlay">
+  <div class="modal">
+    <div class="modal-title">Trigger manual</div>
+    <div class="modal-sub">Cole aqui um payload de ticket (GitHub Issue ou Jira) em JSON</div>
+    <textarea id="trigger-input" placeholder='{
+  "id": "BUG-123",
+  "title": "Botão de login não responde no Safari",
+  "description": "Ao clicar em Login no Safari 17, nada acontece. Console mostra TypeError.",
+  "stepsToReproduce": ["Abrir Safari 17", "Acessar /login", "Clicar em Login"],
+  "expectedBehavior": "Redirecionar para /dashboard",
+  "actualBehavior": "Nada acontece",
+  "rawLogs": "TypeError: Cannot read properties of undefined (reading innerHTML)"
+}'></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeTrigger()">Cancelar</button>
+      <button class="btn btn-primary" onclick="triggerPipeline()">Executar pipeline →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = window.location.hostname === 'localhost' || window.location.port
+  ? `http://localhost:3000`
+  : '';
+
+let runs = [];
+let selectedRun = null;
+let currentView = 'runs';
+
+const STEPS = [
+  { key: 'parsing_ticket',  icon: '📥', name: 'Leitura do ticket',    desc: 'Extrai contexto do bug report' },
+  { key: 'analyzing',       icon: '🔍', name: 'Análise & reprodução', desc: 'Verifica se o bug existe na codebase' },
+  { key: 'coding',          icon: '💻', name: 'Codificação',          desc: 'Claude gera o fix no branch' },
+  { key: 'testing',         icon: '🧪', name: 'Testes',               desc: 'CI + geração de novos testes' },
+  { key: 'deploying',       icon: '🚀', name: 'Deploy',               desc: 'PR criado, merge e deploy' },
+];
+
+const STATUS_MAP = {
+  parsing_ticket: 1, analyzing: 2, coding: 3, testing: 4, deploying: 5,
+  success: 6, closed_invalid: 3, escalated: 4, error: 4, running: 1,
+};
+
+async function refresh() {
+  try {
+    const res = await fetch(`${API}/api/runs`);
+    if (!res.ok) throw new Error('API unavailable');
+    runs = await res.json();
+  } catch (e) {
+    runs = getSampleRuns();
+  }
+  renderStats();
+  renderRuns();
+  renderPipelineView();
+}
+
+function getSampleRuns() {
+  return [
+    { runId: 'run_demo1', status: 'success', ticket: { id: 'BUG-42', title: 'NullPointerException em checkout', severity: 'high' }, deploy: { prUrl: '#' }, tests: { passed: 12, total: 12 }, updatedAt: new Date(Date.now()-120000).toISOString() },
+    { runId: 'run_demo2', status: 'testing',  ticket: { id: 'BUG-43', title: 'Timeout em endpoint /api/orders', severity: 'medium' }, updatedAt: new Date(Date.now()-30000).toISOString() },
+    { runId: 'run_demo3', status: 'closed_invalid', ticket: { id: 'BUG-41', title: 'Layout quebrado no IE11', severity: 'low' }, analysis: { reason: 'IE11 não é mais suportado, ticket inválido.' }, updatedAt: new Date(Date.now()-600000).toISOString() },
+    { runId: 'run_demo4', status: 'escalated', ticket: { id: 'BUG-40', title: 'Race condition em jobs paralelos', severity: 'critical' }, updatedAt: new Date(Date.now()-900000).toISOString() },
+  ];
+}
+
+function renderStats() {
+  const total = runs.length;
+  const success = runs.filter(r => r.status === 'success').length;
+  const running = runs.filter(r => ['parsing_ticket','analyzing','coding','testing','deploying'].includes(r.status)).length;
+  const escalated = runs.filter(r => ['escalated','error'].includes(r.status)).length;
+
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-success').textContent = success;
+  document.getElementById('stat-running').textContent = running;
+  document.getElementById('stat-escalated').textContent = escalated;
+  document.getElementById('stat-rate').textContent = total ? `taxa: ${Math.round(success/total*100)}%` : 'taxa: —';
+  document.getElementById('runs-badge').textContent = total;
+}
+
+function chipHtml(status) {
+  const map = {
+    success: ['chip-success', '✓ sucesso'],
+    testing: ['chip-running', '⟳ testando'],
+    analyzing: ['chip-running', '⟳ analisando'],
+    coding: ['chip-running', '⟳ codificando'],
+    parsing_ticket: ['chip-running', '⟳ lendo ticket'],
+    deploying: ['chip-running', '⟳ deployando'],
+    closed_invalid: ['chip-invalid', '— inválido'],
+    escalated: ['chip-warning', '⚠ escalado'],
+    error: ['chip-error', '✕ erro'],
+    running: ['chip-running', '⟳ executando'],
+  };
+  const [cls, label] = map[status] ?? ['chip-invalid', status];
+  return `<span class="chip ${cls}">${label}</span>`;
+}
+
+function renderRuns() {
+  const el = document.getElementById('runs-list');
+  if (!runs.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">🤖</div><div class="empty-title">Nenhuma execução ainda</div><div class="empty-desc">Configure o webhook ou use "Trigger manual".</div></div>`;
+    return;
+  }
+
+  el.innerHTML = runs.map(r => {
+    const t = r.ticket ?? {};
+    const sevColor = { critical:'var(--red)', high:'var(--amber)', medium:'var(--blue)', low:'var(--muted)' }[t.severity] ?? 'var(--muted)';
+    const isActive = selectedRun?.runId === r.runId;
+    const ago = r.updatedAt ? timeAgo(r.updatedAt) : '';
+    return `
+    <div class="run-card ${isActive ? 'active-run' : ''}" onclick="selectRun('${r.runId}')">
+      <div class="run-icon" style="background:${sevColor}18;color:${sevColor};border-color:${sevColor}30">
+        ${{ critical:'🔥', high:'⚠️', medium:'📋', low:'📄' }[t.severity] ?? '📋'}
+      </div>
+      <div class="run-info">
+        <div class="run-title">${t.title ?? r.runId}</div>
+        <div class="run-meta">
+          <span>${t.id ?? '—'}</span>
+          <span>${ago}</span>
+          ${t.severity ? `<span style="color:${sevColor}">${t.severity}</span>` : ''}
+        </div>
+      </div>
+      <div class="run-right">
+        ${chipHtml(r.status)}
+        <span style="font-family:var(--mono);font-size:10px;color:var(--dim)">${r.runId.slice(-6)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function selectRun(runId) {
+  selectedRun = runs.find(r => r.runId === runId);
+  renderRuns();
+
+  const panel = document.getElementById('detail-panel');
+  const content = document.getElementById('detail-content');
+  panel.style.display = 'block';
+
+  const r = selectedRun;
+  const t = r.ticket ?? {};
+  const a = r.analysis ?? {};
+  const f = r.fix ?? {};
+  const d = r.deploy ?? {};
+  const tst = r.tests ?? {};
+
+  const stepIdx = STATUS_MAP[r.status] ?? 0;
+  const stepsHtml = STEPS.map((s, i) => {
+    let dotClass = 'skip';
+    if (i + 1 < stepIdx) dotClass = 'done';
+    else if (i + 1 === stepIdx) dotClass = r.status === 'error' ? 'error' : 'active';
+    return `
+    <div class="step">
+      <div class="step-line"></div>
+      <div class="step-dot ${dotClass}">${s.icon}</div>
+      <div class="step-body">
+        <div class="step-name" style="color:${dotClass==='done'?'var(--green)':dotClass==='active'?'var(--blue)':dotClass==='error'?'var(--red)':'var(--dim)'}">${s.name}</div>
+        <div class="step-desc">${s.desc}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  content.innerHTML = `
+    <div>${stepsHtml}</div>
+    <div class="detail-grid">
+      <div class="detail-field"><div class="detail-label">Ticket</div><div class="detail-value">${t.id ?? '—'}</div></div>
+      <div class="detail-field"><div class="detail-label">Status</div><div class="detail-value">${chipHtml(r.status)}</div></div>
+      <div class="detail-field"><div class="detail-label">Severidade</div><div class="detail-value">${t.severity ?? '—'}</div></div>
+      <div class="detail-field"><div class="detail-label">Run ID</div><div class="detail-value">${r.runId}</div></div>
+    </div>
+    ${a.rootCause ? `<div class="detail-field"><div class="detail-label">Root cause</div><div class="code-block">${escHtml(a.rootCause)}</div></div>` : ''}
+    ${f.branch ? `<div class="detail-field"><div class="detail-label">Branch</div><div class="detail-value">${f.branch}</div></div>` : ''}
+    ${tst.passed != null ? `<div class="detail-field"><div class="detail-label">Testes</div><div class="detail-value" style="color:var(--green)">${tst.passed} / ${tst.total} passaram</div></div>` : ''}
+    ${d.prUrl ? `<div class="detail-field"><div class="detail-label">Pull Request</div><div class="detail-value"><a href="${d.prUrl}" target="_blank">${d.prUrl}</a></div></div>` : ''}
+    ${r.error ? `<div class="detail-field"><div class="detail-label">Erro</div><div class="code-block" style="color:var(--red)">${escHtml(r.error)}</div></div>` : ''}
+  `;
+}
+
+function renderPipelineView() {
+  document.getElementById('pipeline-steps').innerHTML = STEPS.map(s => `
+    <div class="step">
+      <div class="step-line"></div>
+      <div class="step-dot done">${s.icon}</div>
+      <div class="step-body">
+        <div class="step-name">${s.name}</div>
+        <div class="step-desc">${s.desc}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderConfigView() {
+  const vars = [
+    { key: 'ANTHROPIC_API_KEY', req: true,  desc: 'API key do Claude' },
+    { key: 'GITHUB_TOKEN',      req: true,  desc: 'Token GitHub (escopos: repo, workflow)' },
+    { key: 'GITHUB_REPO',       req: true,  desc: 'Repositório no formato owner/repo' },
+    { key: 'DEFAULT_BRANCH',    req: false, desc: 'Branch principal (padrão: main)' },
+    { key: 'TRIGGER_LABEL',     req: false, desc: 'Label que ativa o pipeline (padrão: ai-fix)' },
+    { key: 'CI_WORKFLOW_ID',    req: false, desc: 'Nome do workflow do GitHub Actions (padrão: ci.yml)' },
+    { key: 'AUTO_MERGE',        req: false, desc: 'Auto-merge quando CI passar (padrão: true)' },
+    { key: 'MAX_RETRIES',       req: false, desc: 'Tentativas antes de escalar (padrão: 3)' },
+    { key: 'SLACK_WEBHOOK_URL', req: false, desc: 'Webhook Slack para notificações' },
+    { key: 'JIRA_BASE_URL',     req: false, desc: 'URL do Jira (se TICKET_PROVIDER=jira)' },
+  ];
+  document.getElementById('config-list').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${vars.map(v => `
+        <div style="display:grid;grid-template-columns:220px 1fr 60px;gap:12px;align-items:center;padding:10px 12px;background:var(--bg);border-radius:7px;border:1px solid var(--border)">
+          <code style="font-family:var(--mono);font-size:12px;color:var(--green)">${v.key}</code>
+          <span style="font-size:12px;color:var(--muted)">${v.desc}</span>
+          <span class="chip ${v.req ? 'chip-error' : 'chip-invalid'}">${v.req ? 'obrig.' : 'opc.'}</span>
+        </div>
+      `).join('')}
+    </div>
+    <div style="margin-top:16px;font-size:12px;color:var(--muted)">
+      Copie <code style="font-family:var(--mono);color:var(--green)">.env.example</code> para <code style="font-family:var(--mono);color:var(--green)">.env</code> e preencha os valores.
+    </div>`;
+}
+
+function renderDocsView() {
+  const steps = [
+    ['1. Instalar dependências', `<code style="display:block;font-family:var(--mono);font-size:12px;color:var(--green);background:var(--bg);padding:10px;border-radius:7px;margin-top:8px">npm install</code>`],
+    ['2. Configurar .env', `Copie <code style="font-family:var(--mono);color:var(--green)">.env.example</code> para <code style="font-family:var(--mono);color:var(--green)">.env</code> e preencha as variáveis obrigatórias.`],
+    ['3. Iniciar o servidor', `<code style="display:block;font-family:var(--mono);font-size:12px;color:var(--green);background:var(--bg);padding:10px;border-radius:7px;margin-top:8px">npm run dev</code>O servidor sobe na porta 3000.`],
+    ['4. Configurar webhook no GitHub', `Vá em <b>Settings → Webhooks</b> no seu repositório e adicione:<br><code style="font-family:var(--mono);font-size:12px;color:var(--green)">http://SEU_SERVIDOR:3000/webhook/github</code><br>Eventos: <code style="font-family:var(--mono);color:var(--amber)">Issues</code>`],
+    ['5. Adicionar label ao repositório', `Crie a label <code style="font-family:var(--mono);color:var(--green)">ai-fix</code> no repositório. Qualquer issue com essa label vai acionar o pipeline automaticamente.`],
+    ['6. Configurar GitHub Actions', `Certifique que seu repositório tem um workflow de CI (ex: <code style="font-family:var(--mono);color:var(--green)">ci.yml</code>) que roda testes no branch. O agente vai aguardar a conclusão.`],
+    ['7. Testar manualmente', `Use o botão <b>"Trigger manual"</b> neste dashboard para enviar um ticket de teste sem precisar de webhook.`],
+  ];
+
+  document.getElementById('docs-content').innerHTML = steps.map(([title, body]) => `
+    <div>
+      <div style="font-weight:700;color:var(--text);margin-bottom:4px">${title}</div>
+      <div>${body}</div>
+    </div>
+  `).join('<div style="height:1px;background:var(--border)"></div>');
+}
+
+function showView(view) {
+  currentView = view;
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+
+  ['runs','pipeline','config','docs'].forEach(v => {
+    document.getElementById(`view-${v}`).style.display = v === view ? '' : 'none';
+  });
+
+  document.getElementById('stats').style.display = view === 'runs' ? '' : 'none';
+
+  if (view === 'config') renderConfigView();
+  if (view === 'docs') renderDocsView();
+  if (view === 'pipeline') renderPipelineView();
+}
+
+function openTrigger() { document.getElementById('trigger-overlay').classList.add('open'); }
+function closeTrigger() { document.getElementById('trigger-overlay').classList.remove('open'); }
+
+async function triggerPipeline() {
+  const raw = document.getElementById('trigger-input').value.trim();
+  let ticket;
+  try { ticket = JSON.parse(raw); } catch(e) { alert('JSON inválido'); return; }
+
+  closeTrigger();
+  try {
+    const res = await fetch(`${API}/api/trigger`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticket }),
+    });
+    const data = await res.json();
+    alert(`Pipeline iniciado! Run ID: ${data.runId ?? 'N/A'}`);
+    refresh();
+  } catch(e) {
+    // Simulate for demo
+    const fake = { runId: 'run_'+Date.now(), status: 'analyzing', ticket, updatedAt: new Date().toISOString() };
+    runs.unshift(fake);
+    renderStats(); renderRuns();
+    alert('Pipeline simulado (servidor offline). Run ID: ' + fake.runId);
+  }
+}
+
+function timeAgo(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(diff/1000);
+  if (s < 60) return `${s}s atrás`;
+  const m = Math.floor(s/60);
+  if (m < 60) return `${m}min atrás`;
+  return `${Math.floor(m/60)}h atrás`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Boot
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>
