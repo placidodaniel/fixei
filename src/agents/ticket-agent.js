@@ -3,13 +3,13 @@
  * Parses tickets from Jira or GitHub Issues and manages ticket lifecycle.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import { logger } from '../services/logger.js';
+import { extractJson } from '../services/llm-utils.js';
 
 export class TicketAgent {
-  constructor(config) {
+  constructor(config, llm) {
     this.config = config;
-    this.claude = new Anthropic({ apiKey: config.anthropicApiKey });
+    this.llm = llm;
     this.provider = config.ticketProvider ?? 'github'; // 'github' | 'jira'
   }
 
@@ -19,36 +19,39 @@ export class TicketAgent {
   async parse(raw) {
     const rawText = this._extractText(raw);
 
-    const message = await this.claude.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      system: `You are a bug ticket analyst. Extract structured information from the ticket.
-Return ONLY valid JSON, no markdown, no explanation.`,
-      messages: [{
-        role: 'user',
-        content: `Extract from this ticket:\n\n${rawText}\n\nReturn JSON with:
+    const system = `You are a bug ticket analyst. Extract structured information from the ticket.
+Return ONLY valid JSON, no markdown, no explanation.`;
+
+    const rawId = String(raw.id ?? raw.number ?? 'unknown');
+
+    const prompt = `Extract information from the ticket below and return a JSON object.
+Do NOT copy field names as values. Fill each field with the actual content from the ticket.
+
+Ticket:
+${rawText}
+
+Return this JSON structure filled with real values from the ticket above:
 {
-  "id": "ticket ID",
-  "title": "short title",
-  "description": "full description",
-  "stepsToReproduce": ["step 1", "step 2"],
-  "expectedBehavior": "what should happen",
-  "actualBehavior": "what actually happens",
-  "environment": { "version": "...", "os": "...", "browser": "..." },
-  "severity": "low|medium|high|critical",
-  "labels": [],
-  "reporter": "username",
-  "rawLogs": "any error logs or stack traces from the ticket"
-}`
-      }]
-    });
+  "id": "${rawId}",
+  "title": <actual title from ticket>,
+  "description": <full description text>,
+  "stepsToReproduce": [<list each step if present, otherwise empty array>],
+  "expectedBehavior": <what should happen, or empty string>,
+  "actualBehavior": <what actually happens, or empty string>,
+  "environment": { "version": <version if mentioned>, "os": <OS if mentioned>, "browser": <browser if mentioned> },
+  "severity": <one of: low, medium, high, critical>,
+  "labels": [<list of label names>],
+  "reporter": <reporter username>,
+  "rawLogs": <any error logs or stack traces found in the ticket, or empty string>
+}`;
 
     try {
-      const text = message.content.find(b => b.type === 'text')?.text ?? '{}';
-      const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
+      const text = await this.llm.call('ticket', system, prompt, 1024);
+      const parsed = extractJson(text);
       return { ...parsed, _raw: raw, _provider: this.provider };
     } catch (e) {
-      logger.warn('TicketAgent: failed to parse Claude response, using raw fallback');
+      logger.warn(`TicketAgent: failed to parse LLM response (${e.message}), using raw fallback`);
+      logger.warn(`TicketAgent: raw LLM output was: ${typeof text !== 'undefined' ? text : '(no response)'}`);
       return {
         id: raw.id ?? raw.number ?? 'unknown',
         title: raw.title ?? raw.summary ?? 'Untitled',
@@ -126,7 +129,6 @@ Return ONLY valid JSON, no markdown, no explanation.`,
     }
     // Jira: POST to /rest/api/2/issue/{id}/comment
     if (this.provider === 'jira') {
-      // Validar configuração do Jira antes de fazer requisição
       if (!this.config.jiraBaseUrl || !this.config.jiraEmail || !this.config.jiraToken) {
         logger.warn('[TicketAgent] Jira not configured, skipping comment');
         return;
@@ -142,7 +144,6 @@ Return ONLY valid JSON, no markdown, no explanation.`,
           body: JSON.stringify({ body }),
         }
       );
-      // Não expor credenciais em logs de erro
       if (!res.ok) {
         logger.warn(`[TicketAgent] Jira comment failed: ${res.status}`);
       }
@@ -171,12 +172,10 @@ Return ONLY valid JSON, no markdown, no explanation.`,
       }
     }
     if (this.provider === 'jira') {
-      // Validar configuração do Jira antes de fazer requisição
       if (!this.config.jiraBaseUrl || !this.config.jiraEmail || !this.config.jiraToken) {
         logger.warn('[TicketAgent] Jira not configured, skipping close');
         return;
       }
-      // Transition to "Done" — transition ID varies per project; common value is "31"
       const transitionId = this.config.jiraTransitionDoneId ?? '31';
       const res = await fetch(
         `${this.config.jiraBaseUrl}/rest/api/2/issue/${id}/transitions`,
@@ -189,7 +188,6 @@ Return ONLY valid JSON, no markdown, no explanation.`,
           body: JSON.stringify({ transition: { id: transitionId } }),
         }
       );
-      // Não expor credenciais em logs de erro
       if (!res.ok) {
         logger.warn(`[TicketAgent] Jira close failed: ${res.status}`);
       }

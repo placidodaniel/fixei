@@ -3,7 +3,9 @@
  * Receives webhooks from GitHub/Jira and exposes a REST API for the dashboard.
  */
 
+import 'dotenv/config';
 import express from 'express';
+import morgan from 'morgan';
 import crypto from 'crypto';
 import { Orchestrator } from '../orchestrator.js';
 import { StateManager } from '../services/state-manager.js';
@@ -11,7 +13,10 @@ import { logger } from '../services/logger.js';
 import { loadConfig } from './config.js';
 
 const app = express();
-app.use(express.json());
+app.use(morgan('dev'));
+app.use(express.json({
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 
 const config = loadConfig();
 const orchestrator = new Orchestrator(config);
@@ -30,13 +35,26 @@ app.get('/health', (_, res) => res.json({ ok: true, ts: new Date().toISOString()
 // ── GITHUB WEBHOOK ────────────────────────────────────────────────────────
 app.post('/webhook/github', async (req, res) => {
   // Verify signature
-  const sig = req.headers['x-hub-signature-256'];
-  if (config.webhookSecret && sig) {
-    const expected = crypto
+  if (config.webhookSecret) {
+    const sig = req.headers['x-hub-signature-256'];
+
+    if (!sig) {
+      return res.status(401).json({ error: 'Missing signature' });
+    }
+
+    const hmac = crypto
       .createHmac('sha256', config.webhookSecret)
-      .update(JSON.stringify(req.body))
-      .digest();
-    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+      .update(req.rawBody)
+      .digest('hex');
+
+    const expected = `sha256=${hmac}`;
+    const sigBuf = Buffer.from(sig);
+    const expectedBuf = Buffer.from(expected);
+
+    if (
+      sigBuf.length !== expectedBuf.length ||
+      !crypto.timingSafeEqual(sigBuf, expectedBuf)
+    ) {
       return res.status(401).json({ error: 'Invalid signature' });
     }
   }
@@ -44,13 +62,15 @@ app.post('/webhook/github', async (req, res) => {
   const event = req.headers['x-github-event'];
   const payload = req.body;
 
-  // Only process "issues" events with "opened" or "labeled" action
+  // Only process "issues" events with "labeled" action
+  // Using only "labeled" avoids duplicate runs: when an issue is created with the
+  // trigger label already applied, GitHub fires both "opened" and "labeled".
   if (event !== 'issues') return res.json({ ignored: true });
-  if (!['opened', 'labeled'].includes(payload.action)) return res.json({ ignored: true });
+  if (payload.action !== 'labeled') return res.json({ ignored: true });
 
   // Check for the trigger label
   const triggerLabel = config.triggerLabel ?? 'ai-fix';
-  const hasLabel = payload.issue?.labels?.some(l => l.name === triggerLabel);
+  const hasLabel = payload.label?.name === triggerLabel;
   if (!hasLabel) return res.json({ ignored: true, reason: `label '${triggerLabel}' not present` });
 
   logger.info(`[Webhook] GitHub issue #${payload.issue.number} received`);

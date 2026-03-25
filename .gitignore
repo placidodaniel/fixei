@@ -1,0 +1,50 @@
+# ─────────────────────────────────────────────────────────────
+#  BugFix Agent — .gitignore
+# ─────────────────────────────────────────────────────────────
+
+# ── Environment & secrets ─────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# ── Runtime state ─────────────────────────────────────────────
+# Pipeline run history (contains ticket titles, PR URLs, audit logs)
+data/
+
+# ── ML model cache ────────────────────────────────────────────
+# CodeBERT model files (~90MB, downloaded automatically on first run)
+.cache/
+models/
+*.onnx
+*.bin
+tokenizer*.json
+vocab.txt
+
+# Node / Transformers.js cache written to project root
+.transformers_cache/
+
+# ── Dependencies ──────────────────────────────────────────────
+node_modules/
+
+# ── Test & coverage output ────────────────────────────────────
+coverage/
+.nyc_output/
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+
+# ── OS & editor files ─────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ── Build output ──────────────────────────────────────────────
+dist/
+build/

@@ -7,9 +7,9 @@ import { GitHubService } from '../services/github.js';
 import { logger } from '../services/logger.js';
 
 export class DeployAgent {
-  constructor(config) {
+  constructor(config, github = null) {
     this.config = config;
-    this.github = new GitHubService(config);
+    this.github = github ?? new GitHubService(config);
   }
 
   /**

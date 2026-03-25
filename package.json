@@ -1,17 +1,22 @@
 {
-  "name": "bugfix-agent",
+  "name": "fixei",
   "version": "1.0.0",
-  "description": "Autonomous bug fix pipeline powered by Claude AI",
+  "description": "Autonomous bug-fixing pipeline — from ticket to production deploy, zero human intervention.",
+  "author": "Daniel Plácido",
+  "license": "MIT",
   "type": "module",
   "main": "src/api/server.js",
   "scripts": {
     "start": "node src/api/server.js",
-    "dev": "node --watch src/api/server.js",
-    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+    "dev": "node --inspect --watch src/api/server.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --verbose --coverage"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
-    "express": "^4.18.2"
+    "@xenova/transformers": "^2.17.2",
+    "dotenv": "^17.3.1",
+    "express": "^4.18.2",
+    "morgan": "^1.10.1"
   },
   "devDependencies": {
     "jest": "^29.7.0"

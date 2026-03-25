@@ -1,17 +1,16 @@
 /**
  * TestAgent
- * Triggers CI tests and uses Claude to generate new test cases for the fix.
+ * Triggers CI tests and uses LLM (via OpenRouter) to generate new test cases for the fix.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
 import { GitHubService } from '../services/github.js';
 import { logger } from '../services/logger.js';
 
 export class TestAgent {
-  constructor(config) {
+  constructor(config, llm, github = null) {
     this.config = config;
-    this.claude = new Anthropic({ apiKey: config.anthropicApiKey });
-    this.github = new GitHubService(config);
+    this.llm = llm;
+    this.github = github ?? new GitHubService(config);
   }
 
   /**
@@ -78,13 +77,7 @@ Return ONLY the test file content (no markdown fences, no explanation).`;
       .map(f => `${f.path}:\n${f.content?.slice(0, 1500) ?? '(large file)'}`)
       .join('\n\n---\n\n');
 
-    const message = await this.claude.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system,
-      messages: [{
-        role: 'user',
-        content: `Bug that was fixed: ${analysis.rootCause}
+    const prompt = `Bug that was fixed: ${analysis.rootCause}
 Bug type: ${analysis.bugType}
 Test hints from coder: ${fix.testHints}
 
@@ -96,11 +89,11 @@ Include:
 1. A test that reproduces the original bug (should now pass)
 2. Edge case tests around the fix
 3. Regression tests
-Use descriptive test names that document the expected behavior.`
-      }]
-    });
+Use descriptive test names that document the expected behavior.`;
 
-    return message.content.find(b => b.type === 'text')?.text ?? null;
+    const text = await this.llm.call('test', system, prompt, 4096);
+
+    return text ?? null;
   }
 
   async _triggerCI(branch) {
@@ -123,19 +116,30 @@ Use descriptive test names that document the expected behavior.`
       logger.warn(`[TestAgent] CI trigger returned ${res.status}. Attempting to find recent run.`);
     }
 
-    // Give GitHub a moment to register the run
-    await this._sleep(5000);
+    // GitHub may take several seconds to register the run after dispatch.
+    // Retry up to 10 times with 5s intervals (50s total) before giving up.
+    const maxAttempts = 10;
+    const pollMs = 5000;
 
-    // Find the run we just triggered
-    const runsRes = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/actions/runs?branch=${branch}&per_page=1`,
-      { headers: { Authorization: `Bearer ${this.config.githubToken}` } }
-    );
-    const runsData = await runsRes.json();
-    const run = runsData.workflow_runs?.[0];
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      await this._sleep(pollMs);
 
-    if (!run) throw new Error('[TestAgent] Could not find CI run after trigger');
-    return { id: run.id, htmlUrl: run.html_url };
+      const runsRes = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/actions/runs?branch=${encodeURIComponent(branch)}&per_page=1`,
+        { headers: { Authorization: `Bearer ${this.config.githubToken}` } }
+      );
+      const runsData = await runsRes.json();
+      const run = runsData.workflow_runs?.[0];
+
+      if (run) {
+        logger.info(`[TestAgent] CI run found on attempt ${attempt}: ${run.html_url}`);
+        return { id: run.id, htmlUrl: run.html_url };
+      }
+
+      logger.info(`[TestAgent] CI run not yet visible (attempt ${attempt}/${maxAttempts}) — waiting...`);
+    }
+
+    throw new Error('[TestAgent] Could not find CI run after trigger');
   }
 
   async _pollCI(runId) {
@@ -204,16 +208,10 @@ Use descriptive test names that document the expected behavior.`
   }
 
   async _interpretFailure(rawLogs) {
-    const message = await this.claude.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 512,
-      system: 'You summarize CI test failures concisely for an autonomous fix agent. Be specific about what failed and why.',
-      messages: [{
-        role: 'user',
-        content: `CI failure output:\n${String(rawLogs).slice(0, 3000)}\n\nSummarize the root cause of the test failure in 2-3 sentences.`
-      }]
-    });
-    return message.content.find(b => b.type === 'text')?.text ?? rawLogs;
+    const system = 'You summarize CI test failures concisely for an autonomous fix agent. Be specific about what failed and why.';
+    const userPrompt = 'CI failure output:\n' + String(rawLogs).slice(0, 3000) + '\n\nSummarize the root cause of the test failure in 2-3 sentences.';
+    const message = await this.llm.call('test', system, userPrompt, 512);
+    return message ?? rawLogs;
   }
 
   _resolveTestPath(sourcePath) {
