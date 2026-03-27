@@ -29,7 +29,7 @@ Fixei receives a bug report (GitHub Issue or Jira), deeply analyzes your codebas
 - [Services](#services)
   - [VectorStoreService](#vectorstoreservice)
   - [Context7Service](#context7service)
-  - [LLMService & Model Fallback](#llmservice--model-fallback)
+  - [LLMService](#llmservice)
   - [GitHubService](#githubservice)
   - [StateManager](#statemanager)
   - [NotificationService](#notificationservice)
@@ -91,7 +91,7 @@ Every agent is a stateless class that receives dependencies through its construc
 
 `src/orchestrator.js`
 
-The Orchestrator owns the pipeline lifecycle. It instantiates every agent at startup and runs them sequentially via the `run(ticketPayload)` method.
+The Orchestrator owns the pipeline lifecycle. It instantiates every agent at startup and runs them sequentially via the `run(ticketPayload)` method. Each step emits a numbered `Step N/6 — …` log on start and a completion log when done, providing real-time progress visibility in the terminal.
 
 The shared context object `ctx` evolves through the pipeline:
 
@@ -387,7 +387,7 @@ To configure the token budget per library: `CONTEXT7_TOKENS=2500` (default).
 
 ---
 
-### LLMService & Model Fallback
+### LLMService
 
 `src/orchestrator.js (LLMService class)`
 
@@ -397,39 +397,51 @@ All agents share a single `LLMService` instance. Each call passes the `agentName
 llm.call(agentName, systemPrompt, userPrompt, maxTokens)
 ```
 
-**OpenRouter native fallback:**
+**Single model per agent:**
 
-Instead of implementing retry logic in the application, Fixei uses [OpenRouter](https://openrouter.ai)'s native `models[]` + `route: "fallback"` feature. The provider automatically tries the next model if the primary fails due to quota limits, rate limiting, or unavailability — zero retry code in the application.
-
-```js
-// What gets sent to OpenRouter:
-{
-  models: ["deepseek/deepseek-chat", "qwen/qwen2.5-coder-7b-instruct", "google/gemini-flash-1.5"],
-  route: "fallback",
-  max_tokens: 16384,
-  messages: [...]
-}
-```
-
-The array is limited to **3 models** (1 primary + 2 fallbacks) — the OpenRouter API limit.
-
-**Per-agent model configuration:**
-
-| Agent | Env Var (primary) | Default fallback chain |
-|---|---|---|
-| analysis | `MODEL_ANALYSIS` | `qwen/qwen2.5-coder-7b-instruct`, `google/gemini-flash-1.5` |
-| code | `MODEL_CODE` | `deepseek/deepseek-chat`, `google/gemini-flash-1.5` |
-| test | `MODEL_TEST` | `deepseek/deepseek-chat`, `google/gemini-flash-1.5` |
-| ticket | `MODEL_TICKET` | `deepseek/deepseek-chat`, `qwen/qwen2.5-coder-7b-instruct` |
-| documentation | `MODEL_DOCUMENTATION` | `qwen/qwen2.5-coder-7b-instruct`, `google/gemini-flash-1.5` |
-
-Fallbacks are also configurable via env vars (comma-separated, no spaces):
+Each agent uses exactly one model, configured via environment variable. Fixei works with both [OpenRouter](https://openrouter.ai) (hosted models) and [Ollama](https://ollama.com) (local models) — the `LLM_PROVIDER` env var selects the backend.
 
 ```bash
-MODEL_FALLBACKS_CODE=anthropic/claude-3-haiku,google/gemini-flash-1.5
+# OpenRouter (default)
+LLM_PROVIDER=openrouter
+MODEL_ANALYSIS=deepseek/deepseek-chat
+
+# Ollama (local)
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+MODEL_ANALYSIS=qwen2.5-coder:7b
 ```
 
-If a fallback model is actually used, a `WARN` log entry records which model ran.
+**Startup model validation (`validateModels()`):**
+
+On startup, Fixei calls the OpenRouter models list API and verifies that every configured model ID actually exists. If a model is not found, an error is thrown before any ticket is processed — no surprises mid-pipeline.
+
+This step also caches each model's `context_length` for the token budget guard. If a model does not return context length metadata, a startup warning is logged:
+
+```
+WARN  [LLM] Context-length guard disabled for: qwen/qwen3-next-80b-a3b-instruct:free — token budget cannot be enforced.
+```
+
+**Token budget guard:**
+
+Before sending a request, LLMService estimates the input token count using `chars / 4` (conservative approximation). If `context_length` metadata is available for the model:
+
+- `max_tokens` is automatically capped to `contextLength - inputTokens - 256` (safety margin)
+- If the prompt already exceeds the model's context window, an error is thrown immediately with an actionable message
+
+**Reactive `finish_reason=length` detection:**
+
+If the model responds with `finish_reason: "length"` (output truncated due to token budget exhaustion), the service throws a descriptive error:
+
+```
+[LLM] Model "deepseek/deepseek-chat" (agent: analysis) ran out of output tokens — finish_reason=length
+(model context_length: 131072 tokens). The prompt is too large for this model.
+Use a model with a larger context window, reduce the number of files sent, or lower CONTEXT7_TOKENS.
+```
+
+**Config error propagation (`isLLMConfigError`):**
+
+HTTP 400 ("not a valid model ID"), 401, and 403 responses set `err.isLLMConfigError = true`. Agents check this flag and re-throw immediately, so the pipeline fails fast with a clear message rather than silently producing wrong results.
 
 ---
 
@@ -463,7 +475,20 @@ Persists pipeline run state to `data/state.json` on disk (upsert by `runId`). Us
 
 `src/services/notification.js`
 
-Sends Slack messages via incoming webhook. If `SLACK_WEBHOOK_URL` is not configured, messages are printed to stdout instead.
+Provides structured, colored terminal logging and Slack notifications.
+
+**Terminal logger (`logger`):**
+
+Writes to `process.stdout` / `process.stderr` with ANSI color codes. A built-in spinner shows the current operation in real time. Spinner lines are committed with a result marker when an operation finishes:
+
+| Marker | Color | Triggered by |
+|---|---|---|
+| `✓` | Green | `logger.success()` and clean process exit |
+| `✗` | Red | `logger.error()` and `logger.fail()` |
+
+`logger.fail()` is used by the Orchestrator for pipeline-level failures (max retries exceeded, config errors). It writes a red `FAIL` badge to stderr, making terminal output immediately actionable.
+
+**Slack notifications:** sent via incoming webhook. If `SLACK_WEBHOOK_URL` is not configured, messages are printed to stdout instead.
 
 ---
 
@@ -575,11 +600,6 @@ curl -X POST http://localhost:3000/api/trigger \
 | `MODEL_TEST` | `anthropic/claude-3.5-sonnet` | Model for test generation |
 | `MODEL_TICKET` | `anthropic/claude-3.5-sonnet` | Model for ticket parsing |
 | `MODEL_DOCUMENTATION` | same as `MODEL_ANALYSIS` | Model for codebase docs generation |
-| `MODEL_FALLBACKS_ANALYSIS` | `qwen/qwen2.5-coder-7b-instruct,google/gemini-flash-1.5` | Comma-separated fallback chain (max 2) |
-| `MODEL_FALLBACKS_CODE` | `deepseek/deepseek-chat,google/gemini-flash-1.5` | |
-| `MODEL_FALLBACKS_TEST` | `deepseek/deepseek-chat,google/gemini-flash-1.5` | |
-| `MODEL_FALLBACKS_TICKET` | `deepseek/deepseek-chat,qwen/qwen2.5-coder-7b-instruct` | |
-| `MODEL_FALLBACKS_DOCUMENTATION` | `qwen/qwen2.5-coder-7b-instruct,google/gemini-flash-1.5` | |
 
 Browse available models at [openrouter.ai/models](https://openrouter.ai/models).
 
