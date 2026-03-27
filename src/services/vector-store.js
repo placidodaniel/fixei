@@ -91,24 +91,30 @@ export class VectorStoreService {
 
         const chunks = [];
 
-        await Promise.allSettled(
-            files.map(async path => {
-                try {
-                    const content = await this.github.getFileContent(path);
-                    const fileChunks = this._chunkFile(path, content);
-                    for (const chunk of fileChunks) {
-                        if (embedder) {
-                            const embedding = await this._embed(embedder, chunk.text);
-                            chunks.push({ ...chunk, embedding });
-                        } else {
-                            chunks.push(chunk); // modo TF-IDF: sem embedding
+        // Fetch files in bounded batches to avoid exhausting the HTTP connection pool
+        // and triggering GitHub API rate-limit connection resets ("fetch failed").
+        const CONCURRENCY = 10;
+        for (let i = 0; i < files.length; i += CONCURRENCY) {
+            const batch = files.slice(i, i + CONCURRENCY);
+            await Promise.allSettled(
+                batch.map(async path => {
+                    try {
+                        const content = await this.github.getFileContent(path);
+                        const fileChunks = this._chunkFile(path, content);
+                        for (const chunk of fileChunks) {
+                            if (embedder) {
+                                const embedding = await this._embed(embedder, chunk.text);
+                                chunks.push({ ...chunk, embedding });
+                            } else {
+                                chunks.push(chunk); // modo TF-IDF: sem embedding
+                            }
                         }
+                    } catch (e) {
+                        logger.warn(`[VectorStore] Skipping ${path}: ${e.message}`);
                     }
-                } catch (e) {
-                    logger.warn(`[VectorStore] Skipping ${path}: ${e.message}`);
-                }
-            })
-        );
+                })
+            );
+        }
 
         const mode = this._embedderFailed ? 'TF-IDF' : 'vector';
         this._index = { builtAt: new Date().toISOString(), mode, chunks };

@@ -50,6 +50,7 @@ Return this JSON structure filled with real values from the ticket above:
       const parsed = extractJson(text);
       return { ...parsed, _raw: raw, _provider: this.provider };
     } catch (e) {
+      if (e.isLLMConfigError) throw e; // invalid model ID / auth failure — do not use fallback
       logger.warn(`TicketAgent: failed to parse LLM response (${e.message}), using raw fallback`);
       logger.warn(`TicketAgent: raw LLM output was: ${typeof text !== 'undefined' ? text : '(no response)'}`);
       return {

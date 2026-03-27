@@ -1,7 +1,7 @@
 import { jest, describe, it, expect, beforeAll, beforeEach } from '@jest/globals';
 
 jest.unstable_mockModule('../../src/services/logger.js', () => ({
-    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(), fail: jest.fn() },
 }));
 
 jest.unstable_mockModule('../../src/services/github.js', () => ({

@@ -102,13 +102,20 @@ If the bug cannot be confirmed from the code, still return confirmed: true with 
 
       return result;
     } catch (e) {
+      if (e.isLLMConfigError) throw e; // invalid model ID / auth failure — do not use fallback
       logger.error('[AnalysisAgent] Failed to parse analysis response', e);
+
+      // Best-effort extraction: pull any file paths out of the raw text so the
+      // CodeAgent isn't handed an empty file list when the rest of the JSON was valid.
+      const fileMatches = text?.matchAll(/"file"\s*:\s*"([^"]+)"/g) ?? [];
+      const affectedFiles = [...new Set([...fileMatches].map(m => m[1]))];
+
       return {
         confirmed: true,
         reason: 'Analysis could not be parsed; proceeding with fix attempt',
         rootCause: ticket.description,
-        codeLocations: [],
-        affectedFiles: [],
+        codeLocations: affectedFiles.map(file => ({ file, lines: '' })),
+        affectedFiles,
         suggestedApproach: 'Investigate the issue described in the ticket',
         bugType: 'other',
         riskLevel: 'medium',

@@ -8,6 +8,7 @@ import { Context7Service } from '../services/context7.js';
 import { logger } from '../services/logger.js';
 import { extractJson } from '../services/llm-utils.js';
 
+
 export class CodeAgent {
   constructor(config, llm, github = null) {
     this.config = config;
@@ -119,7 +120,7 @@ CRITICAL RULES:
     // if not, fall back to plain JSON. Never mix both — extractJson chokes on
     // <<<FILE>>> blocks that contain { } characters from source code.
     const parse = (txt) => {
-      if (txt.includes('<<<PLAN>>>')) {
+      if (txt.includes('<<<PLAN>>>') || txt.includes('<<<FILE:')) {
         return this._parseStructuredResponse(txt);
       }
       return extractJson(txt);
@@ -136,7 +137,18 @@ CRITICAL RULES:
         fixData = parse(recovered);
         logger.info('[CodeAgent] Response recovered successfully');
       } catch (e2) {
-        throw new Error('[CodeAgent] Failed to parse fix response (even after recovery): ' + e.message);
+        // Recovery also failed — build a minimal stub so the pipeline can continue.
+        // The CodeAgent will commit nothing but the orchestrator will not die.
+        logger.error(`[CodeAgent] Recovery failed (${e2.message}), using empty stub — fix will need manual review`);
+        fixData = {
+          prTitle: `fix: ${analysis.rootCause?.slice(0, 72) ?? 'automated fix attempt'}`,
+          prDescription: `Automated fix could not be generated. LLM parse failed after recovery.\n\nRoot cause: ${analysis.rootCause}\n\nSuggested approach: ${analysis.suggestedApproach}`,
+          commitMessage: 'chore: failed auto-fix attempt',
+          testHints: '',
+          breakingChange: false,
+          rollbackPlan: 'No changes were committed.',
+          fileChanges: [],
+        };
       }
     }
 
@@ -248,24 +260,43 @@ CRITICAL RULES:
    * Throws SyntaxError if the format is not present.
    */
   _parseStructuredResponse(text) {
+    // Extract <<<FILE: path>>> ... <<<END_FILE>>> blocks first (always present)
+    const contentByPath = {};
+    const fileRegex = /<<<FILE:\s*(.+?)>>>([\s\S]*?)<<<END_FILE>>>/g;
+    let m;
+    while ((m = fileRegex.exec(text)) !== null) {
+      contentByPath[m[1].trim()] = m[2].replace(/^\n/, '');
+    }
+
     const planMatch = text.match(/<<<PLAN>>>([\s\S]*?)<<<END_PLAN>>>/);
-    if (!planMatch) throw new SyntaxError('No <<<PLAN>>> section found in response');
+    if (!planMatch) {
+      // Model omitted <<<PLAN>>> but still produced <<<FILE:>>> blocks — build a minimal plan
+      const paths = Object.keys(contentByPath);
+      if (paths.length === 0) throw new SyntaxError('No <<<PLAN>>> section found in response');
+      logger.warn('[CodeAgent] <<<PLAN>>> missing — synthesising plan from <<<FILE>>> blocks');
+      const plan = {
+        prTitle: 'fix: automated fix',
+        prDescription: 'Automated fix generated without a plan block.',
+        commitMessage: 'fix: automated fix',
+        testHints: '',
+        breakingChange: false,
+        rollbackPlan: 'Revert the committed files.',
+        files: paths.map(p => ({ path: p, operation: 'update' })),
+      };
+      plan.fileChanges = plan.files.map(f => ({
+        path: f.path,
+        operation: f.operation,
+        content: contentByPath[f.path] ?? '',
+      }));
+      return plan;
+    }
 
     // Strip optional markdown code fences the model may add around the JSON
     const planRaw = planMatch[1]
       .replace(/^\s*```[\w]*\n?/, '')
       .replace(/\n?```\s*$/, '')
       .trim();
-    const plan = JSON.parse(planRaw);
-
-    // Extract <<<FILE: path>>> ... <<<END_FILE>>> blocks
-    const contentByPath = {};
-    const fileRegex = /<<<FILE:\s*(.+?)>>>([\s\S]*?)<<<END_FILE>>>/g;
-    let m;
-    while ((m = fileRegex.exec(text)) !== null) {
-      // Strip a single leading newline that comes from the newline after the marker
-      contentByPath[m[1].trim()] = m[2].replace(/^\n/, '');
-    }
+    const plan = extractJson(planRaw);
 
     plan.fileChanges = (plan.files ?? []).map(f => ({
       path: f.path,

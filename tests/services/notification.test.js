@@ -103,22 +103,26 @@ describe('StateManager (in-memory)', () => {
 describe('logger', () => {
     afterEach(() => jest.restoreAllMocks());
 
-    it('forwards info messages to console.log', () => {
-        const spy = jest.spyOn(console, 'log').mockImplementation(() => { });
+    it('forwards info messages to stdout or console.log', () => {
+        // TTY mode writes via process.stdout.write; non-TTY falls back to console.log
+        const stdoutSpy = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const logSpy = jest.spyOn(console, 'log').mockImplementation(() => { });
         logger.info('[Test] info message');
-        expect(spy).toHaveBeenCalled();
+        expect(stdoutSpy.mock.calls.length + logSpy.mock.calls.length).toBeGreaterThan(0);
     });
 
-    it('forwards warn messages to console.warn', () => {
-        const spy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+    it('forwards warn messages to stdout or console.warn', () => {
+        const stdoutSpy = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
         logger.warn('[Test] warn message');
-        expect(spy).toHaveBeenCalled();
+        expect(stdoutSpy.mock.calls.length + warnSpy.mock.calls.length).toBeGreaterThan(0);
     });
 
-    it('forwards error messages to console.error', () => {
-        const spy = jest.spyOn(console, 'error').mockImplementation(() => { });
+    it('forwards error messages to stderr or console.error', () => {
+        const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+        const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
         logger.error('[Test] error message');
-        expect(spy).toHaveBeenCalled();
+        expect(stderrSpy.mock.calls.length + errorSpy.mock.calls.length).toBeGreaterThan(0);
     });
 
     it('does not print debug output when DEBUG env is not set', () => {
@@ -132,11 +136,13 @@ describe('logger', () => {
     });
 
     it('prints debug output when DEBUG env is set', () => {
-        const spy = jest.spyOn(console, 'log').mockImplementation(() => { });
+        const stdoutSpy = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+        const logSpy = jest.spyOn(console, 'log').mockImplementation(() => { });
         process.env.DEBUG = '1';
         logger.debug('should appear');
-        expect(spy).toHaveBeenCalled();
+        expect(stdoutSpy.mock.calls.length + logSpy.mock.calls.length).toBeGreaterThan(0);
         delete process.env.DEBUG;
-        spy.mockRestore();
+        stdoutSpy.mockRestore();
+        logSpy.mockRestore();
     });
 });

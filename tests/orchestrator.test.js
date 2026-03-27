@@ -14,11 +14,11 @@ jest.unstable_mockModule('../src/services/state-manager.js', () => ({
 const mockNotify = { send: jest.fn().mockResolvedValue(undefined) };
 jest.unstable_mockModule('../src/services/notification.js', () => ({
     NotificationService: jest.fn(() => mockNotify),
-    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(), fail: jest.fn() },
 }));
 
 jest.unstable_mockModule('../src/services/logger.js', () => ({
-    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(), fail: jest.fn() },
 }));
 
 const mockGithub = {

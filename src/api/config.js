@@ -4,13 +4,21 @@
  */
 
 export function loadConfig() {
-  const required = ['OPENROUTER_API_KEY', 'GITHUB_TOKEN', 'GITHUB_REPO'];
+  const llmProvider = process.env.LLM_PROVIDER ?? 'openrouter'; // 'openrouter' | 'ollama'
+
+  const required = llmProvider === 'ollama'
+    ? ['GITHUB_TOKEN', 'GITHUB_REPO']
+    : ['OPENROUTER_API_KEY', 'GITHUB_TOKEN', 'GITHUB_REPO'];
   const missing = required.filter(k => !process.env[k]);
   if (missing.length) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
 
   return {
+    // LLM provider ('openrouter' or 'ollama')
+    llmProvider,
+    ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434',
+
     // OpenRouter (unified LLM provider)
     openRouterApiKey: process.env.OPENROUTER_API_KEY,
 
@@ -21,19 +29,6 @@ export function loadConfig() {
       test: process.env.MODEL_TEST ?? 'anthropic/claude-3.5-sonnet',
       ticket: process.env.MODEL_TICKET ?? 'anthropic/claude-3.5-sonnet',
       documentation: process.env.MODEL_DOCUMENTATION ?? process.env.MODEL_ANALYSIS ?? 'anthropic/claude-3.5-sonnet',
-    },
-
-    // Cadeia de fallback enviada ao OpenRouter (route: "fallback").
-    // O OpenRouter tenta os modelos em ordem; se o primário falhar por quota/rate-limit
-    // o próximo da lista é usado automaticamente — sem retry na aplicação.
-    // OpenRouter limita o array `models` a 3 itens (1 primário + 2 fallbacks).
-    // Sobrescrito por MODEL_FALLBACKS_<AGENT>=model1,model2 (vírgula, sem espaços).
-    modelFallbacks: {
-      analysis: (process.env.MODEL_FALLBACKS_ANALYSIS ?? 'qwen/qwen2.5-coder-7b-instruct,google/gemini-flash-1.5').split(',').slice(0, 2),
-      code: (process.env.MODEL_FALLBACKS_CODE ?? 'deepseek/deepseek-chat,google/gemini-flash-1.5').split(',').slice(0, 2),
-      test: (process.env.MODEL_FALLBACKS_TEST ?? 'deepseek/deepseek-chat,google/gemini-flash-1.5').split(',').slice(0, 2),
-      ticket: (process.env.MODEL_FALLBACKS_TICKET ?? 'deepseek/deepseek-chat,qwen/qwen2.5-coder-7b-instruct').split(',').slice(0, 2),
-      documentation: (process.env.MODEL_FALLBACKS_DOCUMENTATION ?? 'qwen/qwen2.5-coder-7b-instruct,google/gemini-flash-1.5').split(',').slice(0, 2),
     },
 
     // GitHub

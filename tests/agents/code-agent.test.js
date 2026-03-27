@@ -1,7 +1,7 @@
 import { jest, describe, it, expect, beforeAll, beforeEach } from '@jest/globals';
 
 jest.unstable_mockModule('../../src/services/logger.js', () => ({
-    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(), fail: jest.fn() },
 }));
 
 jest.unstable_mockModule('../../src/services/github.js', () => ({
@@ -168,9 +168,13 @@ describe('CodeAgent.fix', () => {
         expect(llm.call).toHaveBeenCalledTimes(2);
     });
 
-    it('throws when both parse and recovery fail', async () => {
+    it('returns an empty stub when both parse and recovery fail', async () => {
+        // Recovery path was changed to return a stub instead of throwing,
+        // so the pipeline continues without crashing.
         llm.call.mockResolvedValue('not json at all {{ broken');
-        await expect(agent.fix(makeAnalysis())).rejects.toThrow('[CodeAgent] Failed to parse fix response');
+        const result = await agent.fix(makeAnalysis());
+        expect(result.fileChanges).toEqual([]);
+        expect(result.prDescription).toMatch(/Automated fix could not be generated/);
     });
 });
 
